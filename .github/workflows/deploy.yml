@@ -1,0 +1,40 @@
+name: deploy
+
+# 推送到 main 或手动触发时：拉官方前端产物 → wrangler deploy 到 Cloudflare Workers。
+# 所需仓库 Secrets：
+#   CLOUDFLARE_API_TOKEN —— CF API 令牌（权限：Workers Scripts 编辑 + Workers KV Storage 编辑）
+#   CLOUDFLARE_ACCOUNT_ID —— CF 账户 ID
+#   JWT_SECRET —— JWT 签名与敏感字段加密密钥（>=16 字符随机串）
+#   ADMIN_PASS —— 初始管理员密码（Worker 首次初始化时用，跳过安装向导防抢注）
+# KV 命名空间由 wrangler 自动预配（openlist-kv），无需手填 id。
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+      - name: 构建并部署到 Cloudflare Workers
+        run: node scripts/deploy.js
+      - name: 同步 Secrets（JWT_SECRET / ADMIN_PASS）
+        env:
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          ADMIN_PASS: ${{ secrets.ADMIN_PASS }}
+        run: |
+          printf '%s' "$JWT_SECRET" | npx wrangler secret put JWT_SECRET
+          printf '%s' "$ADMIN_PASS" | npx wrangler secret put ADMIN_PASS
